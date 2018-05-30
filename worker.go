@@ -1,23 +1,50 @@
 package crawler
 
+import (
+	"net/http"
+	"strings"
+	"sync/atomic"
+)
+
 func (c *Crawler) worker() {
 	defer c.wg.Done()
 
-	for uri := range c.visitChan {
-		addr := uri.target.String()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case uri, ok := <-c.visitChan:
+			if !ok {
+				return
+			}
 
-		c.logger.Printf("Crawl(%v): (from %v)", addr, uri.source)
+			addr := uri.target.String()
 
-		resp, err := c.client.Get(addr)
-		if err != nil {
-			c.logger.Printf("Crawl(%v): %v", addr, err)
+			c.logger.Printf("Crawl(%v) from %v", addr, uri.source)
+
+			req, err := http.NewRequest("GET", addr, nil)
+			if err != nil {
+				c.logger.Printf("Crawl(%v): %v", addr, err)
+				continue
+			}
+
+			req.Header.Add("Accept", "text/*")
+
+			resp, err := c.client.Do(req)
+			if err != nil {
+				c.logger.Printf("Crawl(%v): %v", addr, err)
+				continue
+			}
+
+			atomic.AddUint64(&c.numVisited, 1)
+
+			if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/") {
+				c.logger.Printf("Crawl(%v): Unhandled content-type %v", addr, ct)
+			} else if err := c.parse(uri.target, resp.Body); err != nil {
+				c.logger.Printf("Crawl(%v): Parse: %v", addr, err)
+			}
+
+			resp.Body.Close()
 		}
-
-		if err := c.parse(uri.source, resp.Body); err != nil {
-			c.logger.Printf("Crawl(%v): Parse: %v", addr, err)
-		}
-
-		resp.Body.Close()
 	}
-
 }

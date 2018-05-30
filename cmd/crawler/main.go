@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/disq/crawler"
+	"github.com/disq/crawler/mapper"
 	"github.com/disq/crawler/urlfilter"
 )
 
@@ -44,6 +45,10 @@ func main() {
 	}
 	fil.AddHost(startURL.Host)
 
+	if startURL.Path == "" {
+		startURL.Path = "/"
+	}
+
 	for i := 1; i < flag.NArg(); i++ {
 		fil.AddHost(flag.Arg(i))
 	}
@@ -53,9 +58,10 @@ func main() {
 
 	client := &http.Client{Timeout: *timeout}
 
-	c := crawler.New(ctx, logger, client, fil.Match)
+	mpr := mapper.New()
+	c := crawler.New(ctx, logger, client, fil.Match, mpr)
 
-	errs := c.Add(startURL, startURL)
+	errs := c.Add(nil, startURL)
 	if len(errs) != 0 {
 		logger.Fatal(errs[0])
 	}
@@ -68,10 +74,10 @@ func main() {
 		cancelFunc()
 	}()
 
-	go c.Run(*nw)
-
-	<-ctx.Done()
+	c.Run(*nw)
 	c.Close()
 
-	// TODO show sitemap
+	logger.Printf("Visited pages: %v", c.NumVisited())
+
+	mpr.List(os.Stdout)
 }
