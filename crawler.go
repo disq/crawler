@@ -11,6 +11,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+type visit struct {
+	source, target *url.URL
+}
+
 // Crawler is our main struct
 type Crawler struct {
 	ctx    context.Context
@@ -20,11 +24,11 @@ type Crawler struct {
 
 	filter FilterFunc
 
-	visitChan chan string
+	visitChan chan visit
 	closer    sync.Once
 
-	visited   map[string]struct{}
-	visitedMu sync.RWMutex
+	toVisit   map[string]struct{}
+	toVisitMu sync.Mutex
 }
 
 // FilterFunc is used to exclude urls from getting crawled
@@ -37,6 +41,7 @@ const (
 var (
 	ErrUnsupportedScheme = fmt.Errorf("Unsupported scheme")
 	ErrFilteredOut       = fmt.Errorf("Filtered out")
+	ErrAlreadyInList     = fmt.Errorf("Already in visit list")
 )
 
 // New creates a new crawler
@@ -48,8 +53,8 @@ func New(ctx context.Context, logger *log.Logger, client *http.Client, filter Fi
 
 		filter: filter,
 
-		visitChan: make(chan string, visitChanBuffer),
-		visited:   make(map[string]struct{}),
+		visitChan: make(chan visit, visitChanBuffer),
+		toVisit:   make(map[string]struct{}),
 	}
 }
 
@@ -59,23 +64,52 @@ func (c *Crawler) Close() {
 	})
 }
 
-// Add adds one or more urls to crawler. Returns a list of errors if any occured.
-func (c *Crawler) Add(uri ...string) []error {
+// Add adds one or more urls to crawler. source can be nil. Returns a list of errors if any occured.
+func (c *Crawler) Add(source *url.URL, uri ...*url.URL) []error {
 	var errs []error
 
+	c.toVisitMu.Lock()
+	defer c.toVisitMu.Unlock()
+
 	for _, u := range uri {
-		res, err := url.Parse(u)
-		if err == nil && res.Scheme != "http" && res.Scheme != "https" {
+		var err error
+
+		if u.Scheme == "" {
+			u.Scheme = source.Scheme
+		}
+		if u.Host == "" {
+			u.Host = source.Host
+		}
+
+		if u.Scheme != "http" && u.Scheme != "https" {
 			err = ErrUnsupportedScheme
-		} else if err == nil && c.filter != nil && !c.filter(res) {
+		} else if err == nil && c.filter != nil && !c.filter(u) {
 			err = ErrFilteredOut
 		}
+
+		us := u.String()
+		if err == nil {
+			if _, ok := c.toVisit[us]; ok {
+				err = ErrAlreadyInList
+			}
+		}
+
+		c.logger.Printf("Add(%v %v): %v", source, us, err)
+
 		if err != nil {
 			errs = append(errs, errors.Wrapf(err, "Invalid URL %v", u))
+			continue
+		}
+
+		c.toVisit[us] = struct{}{}
+
+		v := visit{
+			source: source,
+			target: u,
 		}
 
 		select {
-		case c.visitChan <- u:
+		case c.visitChan <- v:
 		case <-c.ctx.Done():
 			return append(errs, c.ctx.Err())
 		}

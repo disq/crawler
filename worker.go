@@ -1,25 +1,23 @@
 package crawler
 
-import "io/ioutil"
-
 func (c *Crawler) worker() {
 	defer c.wg.Done()
 
-	for addr := range c.visitChan {
+	for uri := range c.visitChan {
+		addr := uri.target.String()
+
+		c.logger.Printf("Crawl(%v): (from %v)", addr, uri.source)
+
 		resp, err := c.client.Get(addr)
 		if err != nil {
 			c.logger.Printf("Crawl(%v): %v", addr, err)
 		}
-		b, err := ioutil.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			c.logger.Printf("Crawl(%v): Error reading body: %v", addr, err)
-			continue
+
+		if err := c.parse(uri.source, resp.Body); err != nil {
+			c.logger.Printf("Crawl(%v): Parse: %v", addr, err)
 		}
 
-		// TODO use regex to parse urls and call c.Add
-		_ = b
-
+		resp.Body.Close()
 	}
 
 }

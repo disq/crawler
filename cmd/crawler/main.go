@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
 	"time"
-
-	"net/url"
 
 	"github.com/disq/crawler"
 	"github.com/disq/crawler/urlfilter"
@@ -28,18 +27,22 @@ func main() {
 
 	flag.Parse()
 
-	startURL := flag.Arg(0)
+	startParam := flag.Arg(0)
 
-	if startURL == "" {
+	if startParam == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
 
+	logger := log.New(os.Stderr, "", log.LstdFlags|log.LUTC)
+
 	fil := urlfilter.New()
 
-	if u, err := url.Parse(startURL); err == nil {
-		fil.AddHost(u.Host)
+	startURL, err := url.Parse(startParam)
+	if err != nil {
+		logger.Fatal(err)
 	}
+	fil.AddHost(startURL.Host)
 
 	for i := 1; i < flag.NArg(); i++ {
 		fil.AddHost(flag.Arg(i))
@@ -50,10 +53,9 @@ func main() {
 
 	client := &http.Client{Timeout: *timeout}
 
-	logger := log.New(os.Stderr, "", log.LstdFlags|log.LUTC)
 	c := crawler.New(ctx, logger, client, fil.Match)
 
-	errs := c.Add(startURL)
+	errs := c.Add(startURL, startURL)
 	if len(errs) != 0 {
 		logger.Fatal(errs[0])
 	}
