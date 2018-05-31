@@ -3,12 +3,12 @@ package crawler
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"sync"
 	"sync/atomic"
 
+	"github.com/disq/yolo"
 	"github.com/pkg/errors"
 )
 
@@ -19,7 +19,7 @@ type visit struct {
 // Crawler is our main struct
 type Crawler struct {
 	ctx    context.Context
-	logger *log.Logger
+	logger yolo.Logger
 	client *http.Client
 	wg     sync.WaitGroup
 
@@ -54,7 +54,7 @@ var (
 )
 
 // New creates a new crawler
-func New(ctx context.Context, logger *log.Logger, client *http.Client, filter FilterFunc, mapper Mapper) *Crawler {
+func New(ctx context.Context, logger yolo.Logger, client *http.Client, filter FilterFunc, mapper Mapper) *Crawler {
 	return &Crawler{
 		ctx:    ctx,
 		logger: logger,
@@ -107,7 +107,7 @@ func (c *Crawler) Add(source *url.URL, uri ...*url.URL) []error {
 			c.toVisitMu.RUnlock()
 		}
 
-		c.logger.Printf("Add(%v %v): %v", source, us, err)
+		c.logger.Debugf("Add(%v %v): %v", source, us, err)
 
 		if err != nil {
 			errs = append(errs, errors.Wrapf(err, "Invalid URL %v", u))

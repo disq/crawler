@@ -24,7 +24,7 @@ loop:
 					if at.Key == "href" {
 						u, err := url.Parse(at.Val)
 						if err != nil {
-							c.logger.Printf("Invalid URL %v: %v", at.Val, err)
+							c.logger.Warnf("Invalid URL %v: %v", at.Val, err)
 							continue
 						}
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,17 +15,25 @@ import (
 	"github.com/disq/crawler"
 	"github.com/disq/crawler/mapper"
 	"github.com/disq/crawler/urlfilter"
+	"github.com/disq/yolo"
 )
 
 func main() {
 	timeout := flag.Duration("timeout", 5*time.Second, "HTTP timeout")
 	nw := flag.Int("workers", runtime.NumCPU(), "Number of workers")
+	ll := flag.String("log", "debug", "Log level")
 
 	flag.Usage = func() {
 		fmt.Printf("Usage: %v [options] [start url] [additional hosts to include...]\n", os.Args[0])
+		flag.PrintDefaults()
 	}
 
 	flag.Parse()
+
+	lvl, err := yolo.LevelFromString(*ll)
+	if err != nil {
+		panic(err)
+	}
 
 	startParam := flag.Arg(0)
 
@@ -35,13 +42,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger := log.New(os.Stderr, "", log.LstdFlags|log.LUTC)
+	logger := yolo.New(yolo.WithLevel(lvl))
 
 	fil := urlfilter.New()
 
 	startURL, err := url.Parse(startParam)
 	if err != nil {
-		logger.Fatal(err)
+		logger.Errorf("%v", err)
+		os.Exit(1)
 	}
 	fil.AddHost(startURL.Host)
 
@@ -63,21 +71,22 @@ func main() {
 
 	errs := c.Add(nil, startURL)
 	if len(errs) != 0 {
-		logger.Fatal(errs[0])
+		logger.Errorf("%v", errs[0])
+		os.Exit(1)
 	}
 
 	go func() {
 		ch := make(chan os.Signal, 1)
 		signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGPIPE)
 		<-ch
-		logger.Print("Got signal, cleaning up...")
+		logger.Infof("Got signal, cleaning up...")
 		cancelFunc()
 	}()
 
 	c.Run(*nw)
 	c.Close()
 
-	logger.Printf("Visited pages: %v", c.NumVisited())
+	logger.Infof("Visited pages: %v", c.NumVisited())
 
 	mpr.List(os.Stdout)
 }
