@@ -44,7 +44,7 @@ type Mapper interface {
 }
 
 const (
-	visitChanBuffer = 10
+	visitChanBuffer = 1000
 )
 
 var (
