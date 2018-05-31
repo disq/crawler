@@ -82,6 +82,7 @@ func (c *Crawler) Add(source *url.URL, uri ...*url.URL) []error {
 		var err error
 
 		u := u
+		u.Fragment = "" // reset fragment, we don't want it messing our visited list
 
 		if source != nil {
 			if u.Scheme == "" {
@@ -107,9 +108,9 @@ func (c *Crawler) Add(source *url.URL, uri ...*url.URL) []error {
 			c.toVisitMu.RUnlock()
 		}
 
-		c.logger.Debugf("Add(%v %v): %v", source, us, err)
-
-		if err != nil {
+		if err == nil {
+			c.logger.Debugf("Add(%v %v): OK", source, us)
+		} else if err != nil {
 			errs = append(errs, errors.Wrapf(err, "Invalid URL %v", u))
 			continue
 		}
