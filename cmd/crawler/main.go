@@ -19,62 +19,96 @@ import (
 )
 
 func main() {
-	timeout := flag.Duration("timeout", 5*time.Second, "HTTP timeout")
-	nw := flag.Int("workers", runtime.NumCPU(), "Number of workers")
-	ll := flag.String("log", "debug", "Log level")
 
-	flag.Usage = func() {
-		fmt.Printf("Usage: %v [options] [start url] [additional hosts to include...]\n", os.Args[0])
-		flag.PrintDefaults()
+	// Flags
+	var (
+		flagTimeout    time.Duration
+		flagNumWorkers int
+		flagLogLevel   string
+	)
+
+	{
+		const defaultNumWorkers = 256
+
+		flag.DurationVar(&flagTimeout, "t", 5*time.Second, "HTTP timeout")
+		flag.IntVar(&flagNumWorkers, "w", defaultNumWorkers, fmt.Sprintf("Number of worker goroutines. Negative numbers mean multiples of the CPU core count."))
+		flag.StringVar(&flagLogLevel, "l", "info", "Log level")
+
+		flag.Usage = func() {
+			fmt.Printf("Usage: %v [options] [start url] [additional hosts to include...]\n", os.Args[0])
+			flag.PrintDefaults()
+		}
+
+		flag.Parse()
 	}
 
-	flag.Parse()
+	var logger yolo.Logger
 
-	lvl, err := yolo.LevelFromString(*ll)
-	if err != nil {
-		panic(err)
+	// Logger or bust
+	{
+		lvl, err := yolo.LevelFromString(flagLogLevel)
+		if err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
+		logger = yolo.New(yolo.WithLevel(lvl))
 	}
 
+	// Number of workers
+	{
+		if flagNumWorkers < 0 {
+			flagNumWorkers = runtime.NumCPU() * -flagNumWorkers
+		}
+		if flagNumWorkers < 1 {
+			flagNumWorkers = 1
+		}
+	}
+
+	// Start URL
 	startParam := flag.Arg(0)
-
 	if startParam == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	logger := yolo.New(yolo.WithLevel(lvl))
-
-	fil := urlfilter.New()
-
+	// Parse start URL...
 	startURL, err := url.Parse(startParam)
 	if err != nil {
 		logger.Errorf("%v", err)
 		os.Exit(1)
 	}
+
+	// Initialize filter, add start url host by default
+	fil := urlfilter.New()
 	fil.AddHost(startURL.Host)
 
+	// Add the trailing slash
 	if startURL.Path == "" {
 		startURL.Path = "/"
 	}
 
+	// Additional host whitelist...
 	for i := 1; i < flag.NArg(); i++ {
 		fil.AddHost(flag.Arg(i))
 	}
 
+	// More set up
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	client := &http.Client{Timeout: *timeout}
+	client := &http.Client{Timeout: flagTimeout}
 
 	mpr := mapper.New()
 	c := crawler.New(ctx, logger, client, fil.Match, mpr)
 
+	// Attempt to queue up start URL as the root URL
 	errs := c.Add(nil, startURL)
 	if len(errs) != 0 {
 		logger.Errorf("%v", errs[0])
 		os.Exit(1)
 	}
 
+	// Handle signals, cancel context
 	go func() {
 		ch := make(chan os.Signal, 1)
 		signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGPIPE)
@@ -83,10 +117,14 @@ func main() {
 		cancelFunc()
 	}()
 
-	c.Run(*nw)
+	// Crawl
+	startTime := time.Now()
+	c.Run(flagNumWorkers)
 
+	// Show sitemap
 	mpr.List(os.Stdout)
 
+	// Show stats
 	{
 		q, v, e := c.Stats()
 		if q != v {
@@ -95,5 +133,7 @@ func main() {
 			logger.Infof("Visited pages: %v", v)
 		}
 		logger.Infof("Encountered HREFs: %v", e)
+
+		logger.Infof("Time took: %v", time.Since(startTime))
 	}
 }
