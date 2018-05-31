@@ -28,11 +28,15 @@ func main() {
 	)
 
 	{
-		const defaultNumWorkers = 256
+		const (
+			defaultNumWorkers = 256
+			defaultTimeout    = 10 * time.Second
+			defaultLogLevel   = "info"
+		)
 
-		flag.DurationVar(&flagTimeout, "t", 5*time.Second, "HTTP timeout")
+		flag.DurationVar(&flagTimeout, "t", defaultTimeout, "HTTP timeout")
 		flag.IntVar(&flagNumWorkers, "w", defaultNumWorkers, fmt.Sprintf("Number of worker goroutines. Negative numbers mean multiples of the CPU core count."))
-		flag.StringVar(&flagLogLevel, "l", "info", "Log level")
+		flag.StringVar(&flagLogLevel, "l", defaultLogLevel, "Log level")
 
 		flag.Usage = func() {
 			fmt.Printf("Usage: %v [options] [start url] [additional hosts to include...]\n", os.Args[0])
