@@ -86,5 +86,14 @@ func main() {
 	c.Run(*nw)
 
 	mpr.List(os.Stdout)
-	logger.Infof("Visited pages: %v", c.NumVisited())
+
+	{
+		q, v, e := c.Stats()
+		if q != v {
+			logger.Infof("Visited pages so far: %v (queued: %v)", v, q)
+		} else {
+			logger.Infof("Visited pages: %v", v)
+		}
+		logger.Infof("Encountered HREFs: %v", e)
+	}
 }

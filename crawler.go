@@ -32,8 +32,11 @@ type Crawler struct {
 	toVisit   map[string]struct{}
 	toVisitMu sync.RWMutex
 
-	numVisited     uint64
 	lastActiveTime int64 // time, but sync/atomic compatible
+
+	numQueued      uint64
+	numVisited     uint64
+	numEncountered uint64
 }
 
 // FilterFunc is used to exclude urls from getting crawled
@@ -113,7 +116,9 @@ func (c *Crawler) Add(source *url.URL, uri ...*url.URL) []error {
 
 		if err == nil {
 			c.logger.Debugf("Add(%v %v): OK", source, us)
+			atomic.AddUint64(&c.numQueued, 1)
 		} else if err != nil {
+			atomic.AddUint64(&c.numEncountered, 1)
 			errs = append(errs, errors.Wrapf(err, "Invalid URL %v", u))
 			continue
 		}
@@ -184,6 +189,9 @@ endfor:
 	close(c.visitChan) // close after we're done (not before) to prevent send on closed channel errors
 }
 
-func (c *Crawler) NumVisited() uint64 {
-	return atomic.LoadUint64(&c.numVisited)
+func (c *Crawler) Stats() (uint64, uint64, uint64) {
+	q := atomic.LoadUint64(&c.numQueued)
+	v := atomic.LoadUint64(&c.numVisited)
+	e := atomic.LoadUint64(&c.numEncountered)
+	return q, v, e
 }
