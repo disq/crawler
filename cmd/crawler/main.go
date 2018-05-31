@@ -84,9 +84,7 @@ func main() {
 	}()
 
 	c.Run(*nw)
-	c.Close()
-
-	logger.Infof("Visited pages: %v", c.NumVisited())
 
 	mpr.List(os.Stdout)
+	logger.Infof("Visited pages: %v", c.NumVisited())
 }

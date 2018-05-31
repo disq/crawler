@@ -1,22 +1,25 @@
 package crawler
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"sync/atomic"
 )
 
-func (c *Crawler) worker() {
+func (c *Crawler) worker(ctx context.Context) {
 	defer c.wg.Done()
 
 	for {
 		select {
-		case <-c.ctx.Done():
+		case <-ctx.Done():
 			return
 		case uri, ok := <-c.visitChan:
 			if !ok {
 				return
 			}
+
+			c.registerActivity()
 
 			addr := uri.target.String()
 
@@ -27,6 +30,7 @@ func (c *Crawler) worker() {
 				c.logger.Errorf("Crawl(%v): %v", addr, err)
 				continue
 			}
+			req = req.WithContext(ctx)
 
 			req.Header.Add("Accept", "text/*")
 

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/disq/yolo"
 	"github.com/pkg/errors"
@@ -27,12 +28,12 @@ type Crawler struct {
 	mapper Mapper
 
 	visitChan chan visit
-	closer    sync.Once
 
 	toVisit   map[string]struct{}
 	toVisitMu sync.RWMutex
 
-	numVisited uint64
+	numVisited     uint64
+	lastActiveTime int64 // time, but sync/atomic compatible
 }
 
 // FilterFunc is used to exclude urls from getting crawled
@@ -68,10 +69,12 @@ func New(ctx context.Context, logger yolo.Logger, client *http.Client, filter Fi
 	}
 }
 
-func (c *Crawler) Close() {
-	//c.closer.Do(func() {
-	//	close(c.visitChan)
-	//})
+func (c *Crawler) registerActivity() {
+	atomic.StoreInt64(&c.lastActiveTime, time.Now().Unix())
+}
+
+func (c *Crawler) lastActivity() time.Time {
+	return time.Unix(atomic.LoadInt64(&c.lastActiveTime), 0)
 }
 
 // Add adds one or more urls to crawler. source can be nil to indicate root. Returns a list of errors if any occured.
@@ -149,11 +152,36 @@ func (c *Crawler) Add(source *url.URL, uri ...*url.URL) []error {
 
 // Run launches the worker pool and blocks until they all finish.
 func (c *Crawler) Run(numWorkers int) {
+
+	// Here we create a new cancellable context to control goroutines and requests.
+	// We can't just rely on the parent context because we want to shutdown goroutines if there's no activity for some time.
+	// Closing the channel would introduce "send on closed chan" errors since channel consumers also produce new messages.
+	ctx, cancel := context.WithCancel(c.ctx)
+
 	c.wg.Add(numWorkers)
 	for i := 0; i < numWorkers; i++ {
-		go c.worker()
+		go c.worker(ctx)
 	}
-	c.wg.Wait()
+
+	// Check every second if we're still actively crawling pages
+
+	limit := 1.5 * c.client.Timeout.Seconds()
+	for {
+		if len(c.visitChan) == 0 && time.Since(c.lastActivity()).Seconds() > limit {
+			break
+		}
+
+		select {
+		case <-c.ctx.Done():
+			goto endfor
+		case <-time.After(time.Second):
+		}
+
+	}
+endfor:
+	cancel()           // cancel goroutines and in-flight requests (if any)
+	c.wg.Wait()        // wait for shutdown
+	close(c.visitChan) // close after we're done (not before) to prevent send on closed channel errors
 }
 
 func (c *Crawler) NumVisited() uint64 {
