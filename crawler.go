@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -80,7 +81,8 @@ func (c *Crawler) lastActivity() time.Time {
 	return time.Unix(atomic.LoadInt64(&c.lastActiveTime), 0)
 }
 
-// Add adds one or more urls to crawler. source can be nil to indicate root. Returns a list of errors if any occured.
+// Add adds one or more previously un-added urls to crawler to visit.
+// source can be nil to indicate root. Returns a list of errors if any occured.
 func (c *Crawler) Add(source *url.URL, uri ...*url.URL) []error {
 	var errs []error
 
@@ -101,9 +103,13 @@ func (c *Crawler) Add(source *url.URL, uri ...*url.URL) []error {
 		}
 
 		us := u.String()
+
+		// For the already-visited test we need to clean up each URL a bit
+		vkey := strings.TrimRight(us[strings.Index(us, ":")+1:], "/") // Remove scheme and trailing slash
+
 		if err == nil {
 			c.toVisitMu.RLock()
-			if _, ok := c.toVisit[us]; ok {
+			if _, ok := c.toVisit[vkey]; ok {
 				err = ErrAlreadyInList
 			}
 			c.toVisitMu.RUnlock()
@@ -120,7 +126,7 @@ func (c *Crawler) Add(source *url.URL, uri ...*url.URL) []error {
 		}
 
 		c.toVisitMu.Lock()
-		c.toVisit[us] = struct{}{}
+		c.toVisit[vkey] = struct{}{}
 		c.toVisitMu.Unlock()
 
 		{
