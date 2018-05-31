@@ -22,12 +22,12 @@ Web crawler PoC
 ## Usage
 
     Usage: ./crawler [options] [start url] [additional hosts to include...]
-      -log string
-            Log level (default "debug")
-      -timeout duration
+      -l string
+            Log level (default "info")
+      -t duration
             HTTP timeout (default 5s)
-      -workers int
-            Number of workers (default 4)
+      -w int
+            Number of worker goroutines. Negative numbers mean multiples of the CPU core count. (default 256)
 
 # License
 
