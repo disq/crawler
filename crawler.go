@@ -91,12 +91,7 @@ func (c *Crawler) Add(source *url.URL, uri ...*url.URL) []error {
 		u.Fragment = "" // reset fragment, we don't want it messing our visited list
 
 		if source != nil {
-			if u.Scheme == "" {
-				u.Scheme = source.Scheme
-			}
-			if u.Host == "" {
-				u.Host = source.Host
-			}
+			u = source.ResolveReference(u)
 		}
 
 		if u.Scheme != "http" && u.Scheme != "https" {
@@ -118,6 +113,7 @@ func (c *Crawler) Add(source *url.URL, uri ...*url.URL) []error {
 			c.logger.Debugf("Add(%v %v): OK", source, us)
 			atomic.AddUint64(&c.numQueued, 1)
 		} else if err != nil {
+			//c.logger.Warnf("Add(%v %v): %v", source, us, err)
 			atomic.AddUint64(&c.numEncountered, 1)
 			errs = append(errs, errors.Wrapf(err, "Invalid URL %v", u))
 			continue
